@@ -21,6 +21,7 @@ class SignalRConnection {
 	private hubPath: string
 	private queryParams: string
 	private connectionId: string | null = null
+	private accessToken: string | null = null
 	private running = false
 	private logger: { info: (msg: string) => void; error: (msg: string) => void; warn: (msg: string) => void }
 	private handlers: Record<string, ((...args: any[]) => void)[]> = {}
@@ -42,6 +43,13 @@ class SignalRConnection {
 		return `${this.hubPath}${path}${parts ? '?' + parts : ''}`
 	}
 
+	private getHeaders(contentType?: string): Record<string, string> {
+		const headers: Record<string, string> = {}
+		if (contentType) headers['Content-Type'] = contentType
+		if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`
+		return headers
+	}
+
 	on(event: string, handler: (...args: any[]) => void): void {
 		if (!this.handlers[event]) {
 			this.handlers[event] = []
@@ -58,7 +66,7 @@ class SignalRConnection {
 	}
 
 	async start(): Promise<void> {
-		// Step 1: Negotiate
+		// Step 1: Negotiate with the app server — this returns an Azure SignalR Service redirect
 		const negotiateUrl = this.buildUrl('/negotiate', 'negotiateVersion=1')
 		this.logger.info(`Negotiating at: ${negotiateUrl}`)
 		const negotiateResponse = await fetch(negotiateUrl, {
@@ -71,7 +79,37 @@ class SignalRConnection {
 		}
 
 		const negotiateData: any = await negotiateResponse.json()
-		this.connectionId = negotiateData.connectionToken || negotiateData.connectionId
+
+		// Azure SignalR Service returns a redirect url + accessToken
+		if (negotiateData.url && negotiateData.accessToken) {
+			this.logger.info('Got Azure SignalR redirect, negotiating with Azure...')
+			const azureUrl = new URL(negotiateData.url)
+			this.hubPath = `${azureUrl.origin}${azureUrl.pathname}`
+			this.queryParams = azureUrl.search ? azureUrl.search.substring(1) : ''
+			this.accessToken = negotiateData.accessToken
+
+			// Step 2: Negotiate with Azure SignalR Service to get a connectionId
+			const azureNegotiateUrl = this.buildUrl('/negotiate', 'negotiateVersion=1')
+			const azureNegotiateResponse = await fetch(azureNegotiateUrl, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'text/plain;charset=UTF-8',
+					Authorization: `Bearer ${this.accessToken}`,
+				},
+			})
+
+			if (!azureNegotiateResponse.ok) {
+				throw new Error(
+					`Azure negotiate failed: ${azureNegotiateResponse.status} ${azureNegotiateResponse.statusText}`,
+				)
+			}
+
+			const azureData: any = await azureNegotiateResponse.json()
+			this.connectionId = azureData.connectionToken || azureData.connectionId
+		} else {
+			// Direct connection (no Azure redirect)
+			this.connectionId = negotiateData.connectionToken || negotiateData.connectionId
+		}
 
 		if (!this.connectionId) {
 			throw new Error('No connectionId received from negotiate')
@@ -93,7 +131,7 @@ class SignalRConnection {
 		if (this.connectionId) {
 			try {
 				const deleteUrl = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
-				await fetch(deleteUrl, { method: 'DELETE' })
+				await fetch(deleteUrl, { method: 'DELETE', headers: this.getHeaders() })
 			} catch (_e) {
 				// ignore cleanup errors
 			}
@@ -117,7 +155,7 @@ class SignalRConnection {
 
 		const response = await fetch(url, {
 			method: 'POST',
-			headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+			headers: this.getHeaders('text/plain;charset=UTF-8'),
 			body: body,
 		})
 
@@ -133,6 +171,7 @@ class SignalRConnection {
 				const url = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
 				const response = await fetch(url, {
 					method: 'GET',
+					headers: this.getHeaders(),
 					signal: this.pollAbortController.signal,
 				})
 

@@ -6,7 +6,7 @@ This module allows you to control Internet Clicker (and Cliqer) presentations di
 
 To use this module in Bitfocus Companion:
 
-1. Download the `internetclicker-1.0.7.tgz` file from the root of this repository.
+1. Download the `internetclicker-1.0.8.tgz` file from the root of this repository.
 2. Open the Bitfocus Companion GUI.
 3. Go to the **Modules** tab.
 4. Click the yellow **Import module package** button (as seen at the top of the Manage Modules page).
