@@ -33,6 +33,7 @@ class SignalRConnection {
 	) {
 		// Split URL into path and query params so we can insert /negotiate correctly
 		const urlObj = new URL(hubUrl)
+		// Keep the path as-is (with trailing slash if present)
 		this.hubPath = `${urlObj.origin}${urlObj.pathname}`
 		this.queryParams = urlObj.search ? urlObj.search.substring(1) : '' // remove leading ?
 		this.logger = logger
@@ -40,7 +41,12 @@ class SignalRConnection {
 
 	private buildUrl(path: string, extraParams?: string): string {
 		const parts = [this.queryParams, extraParams].filter(Boolean).join('&')
-		return `${this.hubPath}${path}${parts ? '?' + parts : ''}`
+		let base = this.hubPath
+		if (path) {
+			// For sub-paths like /negotiate, strip trailing slash first to avoid //
+			base = base.replace(/\/$/, '') + path
+		}
+		return `${base}${parts ? '?' + parts : ''}`
 	}
 
 	private getHeaders(contentType?: string): Record<string, string> {
@@ -84,7 +90,7 @@ class SignalRConnection {
 		if (negotiateData.url && negotiateData.accessToken) {
 			this.logger.info('Got Azure SignalR redirect, negotiating with Azure...')
 			const azureUrl = new URL(negotiateData.url)
-			this.hubPath = `${azureUrl.origin}${azureUrl.pathname.replace(/\/$/, '')}`
+			this.hubPath = `${azureUrl.origin}${azureUrl.pathname}`
 			this.queryParams = azureUrl.search ? azureUrl.search.substring(1) : ''
 			this.accessToken = negotiateData.accessToken
 
