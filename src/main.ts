@@ -16,44 +16,26 @@ export type ModuleSchema = {
 
 export { UpgradeScripts }
 
-// SignalR Long Polling transport using native fetch (no ws/eventsource dependencies)
+// SignalR WebSocket transport using Node.js native WebSocket (Node 22+, no external deps)
 class SignalRConnection {
-	private hubPath: string
-	private queryParams: string
-	private connectionId: string | null = null
-	private accessToken: string | null = null
-	private running = false
+	private negotiateUrl: string
+	private ws: WebSocket | null = null
 	private logger: { info: (msg: string) => void; error: (msg: string) => void; warn: (msg: string) => void }
 	private handlers: Record<string, ((...args: any[]) => void)[]> = {}
-	private pollAbortController: AbortController | null = null
+	private connected = false
 
 	constructor(
 		hubUrl: string,
 		logger: { info: (msg: string) => void; error: (msg: string) => void; warn: (msg: string) => void },
 	) {
-		// Split URL into path and query params so we can insert /negotiate correctly
+		// Build negotiate URL by inserting /negotiate before query params
 		const urlObj = new URL(hubUrl)
-		// Keep the path as-is (with trailing slash if present)
-		this.hubPath = `${urlObj.origin}${urlObj.pathname}`
-		this.queryParams = urlObj.search ? urlObj.search.substring(1) : '' // remove leading ?
+		const basePath = urlObj.pathname.replace(/\/$/, '')
+		const negotiatePath = `${basePath}/negotiate`
+		const params = new URLSearchParams(urlObj.search)
+		params.set('negotiateVersion', '1')
+		this.negotiateUrl = `${urlObj.origin}${negotiatePath}?${params.toString()}`
 		this.logger = logger
-	}
-
-	private buildUrl(path: string, extraParams?: string): string {
-		const parts = [this.queryParams, extraParams].filter(Boolean).join('&')
-		let base = this.hubPath
-		if (path) {
-			// For sub-paths like /negotiate, strip trailing slash first to avoid //
-			base = base.replace(/\/$/, '') + path
-		}
-		return `${base}${parts ? '?' + parts : ''}`
-	}
-
-	private getHeaders(contentType?: string): Record<string, string> {
-		const headers: Record<string, string> = {}
-		if (contentType) headers['Content-Type'] = contentType
-		if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`
-		return headers
 	}
 
 	on(event: string, handler: (...args: any[]) => void): void {
@@ -72,10 +54,9 @@ class SignalRConnection {
 	}
 
 	async start(): Promise<void> {
-		// Step 1: Negotiate with the app server — this returns an Azure SignalR Service redirect
-		const negotiateUrl = this.buildUrl('/negotiate', 'negotiateVersion=1')
-		this.logger.info(`Negotiating at: ${negotiateUrl}`)
-		const negotiateResponse = await fetch(negotiateUrl, {
+		// Step 1: Negotiate with the app server
+		this.logger.info(`Negotiating at: ${this.negotiateUrl}`)
+		const negotiateResponse = await fetch(this.negotiateUrl, {
 			method: 'POST',
 			headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
 		})
@@ -86,67 +67,94 @@ class SignalRConnection {
 
 		const negotiateData: any = await negotiateResponse.json()
 
-		// Azure SignalR Service returns a redirect url + accessToken
-		if (negotiateData.url && negotiateData.accessToken) {
-			this.logger.info('Got Azure SignalR redirect, negotiating with Azure...')
-			const azureUrl = new URL(negotiateData.url)
-			this.hubPath = `${azureUrl.origin}${azureUrl.pathname}`
-			this.queryParams = azureUrl.search ? azureUrl.search.substring(1) : ''
-			this.accessToken = negotiateData.accessToken
+		if (!negotiateData.url || !negotiateData.accessToken) {
+			throw new Error('No Azure SignalR redirect received')
+		}
 
-			// Step 2: Negotiate with Azure SignalR Service to get a connectionId
-			const azureNegotiateUrl = this.buildUrl('/negotiate', 'negotiateVersion=1')
-			const azureNegotiateResponse = await fetch(azureNegotiateUrl, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'text/plain;charset=UTF-8',
-					Authorization: `Bearer ${this.accessToken}`,
-				},
-			})
+		this.logger.info('Got Azure SignalR redirect, connecting via WebSocket...')
 
-			if (!azureNegotiateResponse.ok) {
-				throw new Error(
-					`Azure negotiate failed: ${azureNegotiateResponse.status} ${azureNegotiateResponse.statusText}`,
-				)
+		// Step 2: Build WebSocket URL from the Azure redirect
+		// Change https:// to wss:// and append access_token
+		const wsUrl = negotiateData.url.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://')
+			+ '&access_token=' + encodeURIComponent(negotiateData.accessToken)
+
+		// Step 3: Connect via WebSocket
+		await new Promise<void>((resolve, reject) => {
+			this.ws = new WebSocket(wsUrl)
+
+			const timeout = setTimeout(() => {
+				reject(new Error('WebSocket connection timeout'))
+			}, 10000)
+
+			this.ws.onopen = () => {
+				clearTimeout(timeout)
+				this.logger.info('WebSocket connected, sending handshake...')
+				// Send SignalR handshake
+				this.ws!.send(JSON.stringify({ protocol: 'json', version: 1 }) + '\x1e')
 			}
 
-			const azureData: any = await azureNegotiateResponse.json()
-			this.connectionId = azureData.connectionToken || azureData.connectionId
-		} else {
-			// Direct connection (no Azure redirect)
-			this.connectionId = negotiateData.connectionToken || negotiateData.connectionId
-		}
+			this.ws.onmessage = (event: MessageEvent) => {
+				const data = typeof event.data === 'string' ? event.data : event.data.toString()
+				const messages = data.split('\x1e').filter((m: string) => m.trim())
 
-		if (!this.connectionId) {
-			throw new Error('No connectionId received from negotiate')
-		}
+				for (const msg of messages) {
+					try {
+						const parsed = JSON.parse(msg)
 
-		this.logger.info(`Negotiated connection: ${this.connectionId.substring(0, 8)}...`)
-		this.running = true
+						if (!this.connected) {
+							// First message is handshake response
+							if (parsed.error) {
+								reject(new Error(`Handshake error: ${parsed.error}`))
+							} else {
+								this.connected = true
+								this.logger.info('SignalR handshake complete')
+								resolve()
+							}
+							continue
+						}
 
-		// Start long polling in the background
-		this.pollLoop()
+						// Handle different message types
+						if (parsed.type === 1 && parsed.target) {
+							// Invocation message from server
+							this.emit(parsed.target, ...(parsed.arguments || []))
+						} else if (parsed.type === 6) {
+							// Ping - respond with ping
+							this.ws?.send(JSON.stringify({ type: 6 }) + '\x1e')
+						} else if (parsed.type === 7) {
+							// Close message
+							this.logger.info('Server sent close message')
+							this.ws?.close()
+						}
+					} catch (_e) {
+						// skip unparseable
+					}
+				}
+			}
+
+			this.ws.onerror = (err: Event) => {
+				clearTimeout(timeout)
+				this.logger.error(`WebSocket error: ${err}`)
+				reject(new Error('WebSocket connection error'))
+			}
+
+			this.ws.onclose = () => {
+				clearTimeout(timeout)
+				this.connected = false
+				this.logger.info('WebSocket closed')
+			}
+		})
 	}
 
 	async stop(): Promise<void> {
-		this.running = false
-		if (this.pollAbortController) {
-			this.pollAbortController.abort()
-			this.pollAbortController = null
-		}
-		if (this.connectionId) {
-			try {
-				const deleteUrl = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
-				await fetch(deleteUrl, { method: 'DELETE', headers: this.getHeaders() })
-			} catch (_e) {
-				// ignore cleanup errors
-			}
-			this.connectionId = null
+		this.connected = false
+		if (this.ws) {
+			this.ws.close()
+			this.ws = null
 		}
 	}
 
 	async invoke(method: string, ...args: any[]): Promise<void> {
-		if (!this.connectionId) {
+		if (!this.ws || !this.connected) {
 			throw new Error('Not connected')
 		}
 
@@ -156,61 +164,7 @@ class SignalRConnection {
 			type: 1, // Invocation message
 		}
 
-		const url = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
-		const body = JSON.stringify(message) + '\x1e' // Record separator
-
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: this.getHeaders('text/plain;charset=UTF-8'),
-			body: body,
-		})
-
-		if (!response.ok) {
-			throw new Error(`Invoke failed: ${response.status} ${response.statusText}`)
-		}
-	}
-
-	private async pollLoop(): Promise<void> {
-		while (this.running && this.connectionId) {
-			try {
-				this.pollAbortController = new AbortController()
-				const url = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
-				const response = await fetch(url, {
-					method: 'GET',
-					headers: this.getHeaders(),
-					signal: this.pollAbortController.signal,
-				})
-
-				if (!response.ok) {
-					this.logger.error(`Poll failed: ${response.status}`)
-					break
-				}
-
-				const text = await response.text()
-				if (text) {
-					// Parse SignalR messages (delimited by 0x1E record separator)
-					const messages = text.split('\x1e').filter((m) => m.trim())
-					for (const msg of messages) {
-						try {
-							const parsed = JSON.parse(msg)
-							if (parsed.type === 1 && parsed.target) {
-								// Invocation message
-								this.emit(parsed.target, ...(parsed.arguments || []))
-							}
-						} catch (_e) {
-							// skip unparseable messages
-						}
-					}
-				}
-			} catch (e: any) {
-				if (e.name === 'AbortError') {
-					break
-				}
-				this.logger.error(`Poll error: ${e.message}`)
-				// Wait before retrying
-				await new Promise((resolve) => setTimeout(resolve, 2000))
-			}
-		}
+		this.ws.send(JSON.stringify(message) + '\x1e')
 	}
 }
 
