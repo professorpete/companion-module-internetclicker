@@ -14,35 +14,35 @@ export function UpdateActions(self: ModuleInstance): void {
 			name: 'Next Slide',
 			options: [],
 			callback: async () => {
-				self.sendCommand('RightArrowFromAdmin')
+				self.sendCommand('rightArrow')
 			},
 		},
 		previous: {
 			name: 'Previous Slide',
 			options: [],
 			callback: async () => {
-				self.sendCommand('LeftArrowFromAdmin')
+				self.sendCommand('leftArrow')
 			},
 		},
 		startTimer: {
 			name: 'Start Timer',
 			options: [],
 			callback: async () => {
-				self.sendCommand('StartTimerFromAdmin')
+				self.sendCommand('startTimer')
 			},
 		},
 		pauseTimer: {
 			name: 'Pause Timer',
 			options: [],
 			callback: async () => {
-				self.sendCommand('PauseTimerFromAdmin')
+				self.sendCommand('pauseTimer')
 			},
 		},
 		stopTimer: {
 			name: 'Stop Timer',
 			options: [],
 			callback: async () => {
-				self.sendCommand('StopTimerFromAdmin')
+				self.sendCommand('stopTimer')
 			},
 		},
 	})
