@@ -84,7 +84,7 @@ class SignalRConnection {
 		if (negotiateData.url && negotiateData.accessToken) {
 			this.logger.info('Got Azure SignalR redirect, negotiating with Azure...')
 			const azureUrl = new URL(negotiateData.url)
-			this.hubPath = `${azureUrl.origin}${azureUrl.pathname}`
+			this.hubPath = `${azureUrl.origin}${azureUrl.pathname.replace(/\/$/, '')}`
 			this.queryParams = azureUrl.search ? azureUrl.search.substring(1) : ''
 			this.accessToken = negotiateData.accessToken
 
