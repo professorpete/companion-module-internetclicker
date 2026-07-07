@@ -1,18 +1,18 @@
 {
 	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
 	"type": "connection",
-	"id": "your-module-name",
-	"name": "your-module-name",
-	"shortname": "module-shortname",
-	"description": "A short one line description of your module",
-	"version": "0.0.0",
+	"id": "internetclicker",
+	"name": "Internet Clicker",
+	"shortname": "internetclicker",
+	"description": "Bitfocus Companion module to control Internet Clicker presentations",
+	"version": "1.0.0",
 	"license": "MIT",
-	"repository": "git+https://github.com/bitfocus/companion-module-your-module-name.git",
-	"bugs": "https://github.com/bitfocus/companion-module-your-module-name/issues",
+	"repository": "git+https://github.com/YOUR_GITHUB_USERNAME/companion-module-internetclicker.git",
+	"bugs": "https://github.com/YOUR_GITHUB_USERNAME/companion-module-internetclicker/issues",
 	"maintainers": [
 		{
-			"name": "Your name",
-			"email": "Your email"
+			"name": "Peter",
+			"email": "peter@moscone.ca"
 		}
 	],
 	"runtime": {
@@ -22,7 +22,7 @@
 		"entrypoint": "../dist/main.js"
 	},
 	"legacyIds": [],
-	"manufacturer": "Your company",
-	"products": ["Your product"],
+	"manufacturer": "Internet Clicker",
+	"products": ["Internet Clicker Remote"],
 	"keywords": []
 }

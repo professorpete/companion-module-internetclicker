@@ -1,29 +1,30 @@
 {
-	"name": "your-module-name",
-	"version": "0.1.0",
+	"name": "companion-module-internetclicker",
+	"version": "1.0.0",
 	"main": "dist/main.js",
 	"type": "module",
 	"scripts": {
 		"postinstall": "husky",
 		"format": "prettier -w .",
-		"package": "run build && companion-module-build",
-		"build": "rimraf dist && run build:main",
+		"package": "npm run build && companion-module-build",
+		"build": "rimraf dist && npm run build:main",
 		"build:main": "tsc -p tsconfig.build.json",
 		"dev": "tsc -p tsconfig.build.json --watch",
 		"lint:raw": "eslint",
-		"lint": "run lint:raw ."
+		"lint": "npm run lint:raw ."
 	},
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bitfocus/companion-module-your-module-name.git"
+		"url": "git+https://github.com/YOUR_GITHUB_USERNAME/companion-module-internetclicker.git"
 	},
 	"engines": {
 		"node": "^22.20",
 		"yarn": "^4"
 	},
 	"dependencies": {
-		"@companion-module/base": "2.0.4"
+		"@companion-module/base": "2.0.4",
+		"@microsoft/signalr": "^10.0.0"
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^3.0.1",

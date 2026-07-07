@@ -1,29 +1,48 @@
 import type ModuleInstance from './main.js'
 
 export type ActionsSchema = {
-	sample_action: {
-		options: {
-			num: number
-		}
-	}
+	next: { options: Record<string, never> }
+	previous: { options: Record<string, never> }
+	startTimer: { options: Record<string, never> }
+	pauseTimer: { options: Record<string, never> }
+	stopTimer: { options: Record<string, never> }
 }
 
 export function UpdateActions(self: ModuleInstance): void {
 	self.setActionDefinitions({
-		sample_action: {
-			name: 'My First Action',
-			options: [
-				{
-					id: 'num',
-					type: 'number',
-					label: 'Test',
-					default: 5,
-					min: 0,
-					max: 100,
-				},
-			],
-			callback: async (event) => {
-				console.log('Hello world!', event.options.num)
+		next: {
+			name: 'Next Slide',
+			options: [],
+			callback: async () => {
+				self.sendCommand('RightArrowFromAdmin')
+			},
+		},
+		previous: {
+			name: 'Previous Slide',
+			options: [],
+			callback: async () => {
+				self.sendCommand('LeftArrowFromAdmin')
+			},
+		},
+		startTimer: {
+			name: 'Start Timer',
+			options: [],
+			callback: async () => {
+				self.sendCommand('StartTimerFromAdmin')
+			},
+		},
+		pauseTimer: {
+			name: 'Pause Timer',
+			options: [],
+			callback: async () => {
+				self.sendCommand('PauseTimerFromAdmin')
+			},
+		},
+		stopTimer: {
+			name: 'Stop Timer',
+			options: [],
+			callback: async () => {
+				self.sendCommand('StopTimerFromAdmin')
 			},
 		},
 	})
