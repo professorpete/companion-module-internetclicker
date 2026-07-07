@@ -6,15 +6,15 @@ This module allows you to control Internet Clicker (and Cliqer) presentations di
 
 To use this module in Bitfocus Companion:
 
-1. First, build and package the module by running:
+1. First, build and package the module by opening a PowerShell window in this folder and running:
    ```bash
    npm run package
    ```
-   *This will generate a `.pkg` file in your repository folder (e.g., `companion-module-internetclicker.pkg`).*
+   *This will generate a `.tgz` file in your repository folder (e.g., `internetclicker-1.0.0.tgz`).*
 2. Open the Bitfocus Companion GUI.
 3. Go to the **Modules** tab.
 4. Click the yellow **Import module package** button (as seen at the top of the Manage Modules page).
-5. Select the `.pkg` file you just generated.
+5. Select the `.tgz` file you just generated.
 6. Once imported, go to the **Connections** tab, search for `Internet Clicker`, and click Add.
 7. Fill out the configuration fields using your Host URL, Event Code, and API Key.
 
