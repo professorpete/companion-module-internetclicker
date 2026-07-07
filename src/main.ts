@@ -232,8 +232,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 		if (!this.config.code) {
 			this.updateStatus(InstanceStatus.BadConfig, 'Missing Event Code')
+			this.setVariableValues({ eventCode: '' })
 			return
 		}
+
+		this.setVariableValues({ eventCode: this.config.code })
 
 		const codeEncoded = encodeURIComponent(this.config.code)
 		const hubUrl = `https://internetclicker.com/keypressHub?sdkVersion=1&code=${codeEncoded}`
