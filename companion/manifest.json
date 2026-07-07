@@ -5,7 +5,7 @@
 	"name": "internetclicker",
 	"shortname": "internetclicker",
 	"description": "Bitfocus Companion module to control Internet Clicker presentations",
-	"version": "1.0.6",
+	"version": "1.0.7",
 	"license": "MIT",
 	"repository": "git+https://github.com/YOUR_GITHUB_USERNAME/companion-module-internetclicker.git",
 	"bugs": "https://github.com/YOUR_GITHUB_USERNAME/companion-module-internetclicker/issues",

@@ -18,7 +18,8 @@ export { UpgradeScripts }
 
 // SignalR Long Polling transport using native fetch (no ws/eventsource dependencies)
 class SignalRConnection {
-	private baseUrl: string
+	private hubPath: string
+	private queryParams: string
 	private connectionId: string | null = null
 	private running = false
 	private logger: { info: (msg: string) => void; error: (msg: string) => void; warn: (msg: string) => void }
@@ -29,8 +30,16 @@ class SignalRConnection {
 		hubUrl: string,
 		logger: { info: (msg: string) => void; error: (msg: string) => void; warn: (msg: string) => void },
 	) {
-		this.baseUrl = hubUrl
+		// Split URL into path and query params so we can insert /negotiate correctly
+		const urlObj = new URL(hubUrl)
+		this.hubPath = `${urlObj.origin}${urlObj.pathname}`
+		this.queryParams = urlObj.search ? urlObj.search.substring(1) : '' // remove leading ?
 		this.logger = logger
+	}
+
+	private buildUrl(path: string, extraParams?: string): string {
+		const parts = [this.queryParams, extraParams].filter(Boolean).join('&')
+		return `${this.hubPath}${path}${parts ? '?' + parts : ''}`
 	}
 
 	on(event: string, handler: (...args: any[]) => void): void {
@@ -50,7 +59,8 @@ class SignalRConnection {
 
 	async start(): Promise<void> {
 		// Step 1: Negotiate
-		const negotiateUrl = `${this.baseUrl}/negotiate?negotiateVersion=1`
+		const negotiateUrl = this.buildUrl('/negotiate', 'negotiateVersion=1')
+		this.logger.info(`Negotiating at: ${negotiateUrl}`)
 		const negotiateResponse = await fetch(negotiateUrl, {
 			method: 'POST',
 			headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
@@ -82,9 +92,8 @@ class SignalRConnection {
 		}
 		if (this.connectionId) {
 			try {
-				await fetch(`${this.baseUrl}?id=${encodeURIComponent(this.connectionId)}`, {
-					method: 'DELETE',
-				})
+				const deleteUrl = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
+				await fetch(deleteUrl, { method: 'DELETE' })
 			} catch (_e) {
 				// ignore cleanup errors
 			}
@@ -103,7 +112,7 @@ class SignalRConnection {
 			type: 1, // Invocation message
 		}
 
-		const url = `${this.baseUrl}?id=${encodeURIComponent(this.connectionId)}`
+		const url = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
 		const body = JSON.stringify(message) + '\x1e' // Record separator
 
 		const response = await fetch(url, {
@@ -121,7 +130,7 @@ class SignalRConnection {
 		while (this.running && this.connectionId) {
 			try {
 				this.pollAbortController = new AbortController()
-				const url = `${this.baseUrl}?id=${encodeURIComponent(this.connectionId)}`
+				const url = this.buildUrl('', `id=${encodeURIComponent(this.connectionId)}`)
 				const response = await fetch(url, {
 					method: 'GET',
 					signal: this.pollAbortController.signal,
